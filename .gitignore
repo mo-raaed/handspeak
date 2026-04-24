@@ -1,0 +1,54 @@
+# ────────────────────────────────────────
+# Python
+# ────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# ────────────────────────────────────────
+# Virtual environments
+# ────────────────────────────────────────
+venv/
+.env/
+env/
+
+# ────────────────────────────────────────
+# IDE / Editor
+# ────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ────────────────────────────────────────
+# Jupyter Notebooks
+# ────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ────────────────────────────────────────
+# Project-specific
+# ────────────────────────────────────────
+
+# Dataset — too large for git
+/data/
+
+# Trained model weights
+/models/*.h5
+/models/*.keras
+
+# Evaluation outputs
+/results/
+
+# Secrets
+.env
+kaggle.json
+
+# OS files
+.DS_Store
+Thumbs.db
