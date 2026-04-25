@@ -30,10 +30,10 @@ class LandmarkNN(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(input_size, 128),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(0.4),
             nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Dropout(0.2),
+            nn.Dropout(0.4),
             nn.Linear(64, num_classes)
         )
 
@@ -102,7 +102,7 @@ def train():
     # 4. Build Model
     model = LandmarkNN(input_size=63, num_classes=num_classes).to(DEVICE)
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=1e-4)
     
     # 5. Training Loop
     best_val_loss = float('inf')
@@ -115,7 +115,12 @@ def train():
         
         for batch_x, batch_y in train_loader:
             optimizer.zero_grad()
-            outputs = model(batch_x)
+            
+            # Anti-Overfitting: Add random noise (jitter) to the coordinates during training
+            noise = torch.randn_like(batch_x) * 0.02
+            augmented_x = batch_x + noise
+            
+            outputs = model(augmented_x)
             loss = criterion(outputs, batch_y)
             loss.backward()
             optimizer.step()
