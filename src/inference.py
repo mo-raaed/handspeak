@@ -41,8 +41,20 @@ def get_bounding_box(hand_landmarks, width, height):
         x_min, y_min = min(x_min, x), min(y_min, y)
         x_max, y_max = max(x_max, x), max(y_max, y)
     
-    # Add padding
-    pad = 40
+    # Make the box a square to prevent stretching during resize
+    box_w = x_max - x_min
+    box_h = y_max - y_min
+    diff = abs(box_w - box_h)
+    
+    if box_w > box_h:
+        y_min -= diff // 2
+        y_max += diff - (diff // 2)
+    else:
+        x_min -= diff // 2
+        x_max += diff - (diff // 2)
+        
+    # Add a tighter padding
+    pad = 20
     x_min = max(0, x_min - pad)
     y_min = max(0, y_min - pad)
     x_max = min(width, x_max + pad)
