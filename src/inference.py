@@ -24,10 +24,10 @@ class LandmarkNN(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(input_size, 128),
             nn.ReLU(),
-            nn.Dropout(0.4),
+            nn.Dropout(0.2),
             nn.Linear(128, 64),
             nn.ReLU(),
-            nn.Dropout(0.4),
+            nn.Dropout(0.2),
             nn.Linear(64, num_classes)
         )
 
