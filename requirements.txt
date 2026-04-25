@@ -1,4 +1,5 @@
-tensorflow>=2.15.0
+torch>=2.2.0
+torchvision>=0.17.0
 mediapipe>=0.10.9
 opencv-python>=4.9.0
 kagglehub>=0.2.0
