@@ -153,6 +153,7 @@ python src/inference.py
 ## 📝 Changelog
 
 * **April 25, 2026:**
+  * **Landmarks Inference Update:** Rewrote `src/inference.py` to use the new `LandmarkNN` model. The webcam now extracts the 63 hand coordinates via MediaPipe and feeds them into the tiny Neural Network, achieving flawless real-world background immunity.
   * **Advanced AI Pipeline (Landmarks Training):** Created `src/train_landmarks.py` to train a lightning-fast, lightweight Multi-Layer Perceptron (MLP) on the extracted skeletal coordinates, ignoring raw pixels to completely eliminate background bias.
   * **Advanced AI Pipeline (Landmarks Extraction):** Created `src/extract_landmarks.py` to batch process all 87,000 dataset images using MediaPipe. This script extracts the 21 `(x, y, z)` skeletal coordinates from the hands and saves them to a CSV, allowing us to train a highly robust, background-immune neural network instead of relying on raw pixels.
   * **Aspect Ratio Fix:** Updated `src/inference.py` to enforce square bounding boxes around detected hands. This prevents aspect-ratio stretching when resizing crops to 64x64, significantly improving prediction accuracy.
