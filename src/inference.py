@@ -4,6 +4,9 @@ import torch.nn as nn
 from torchvision.models import resnet18
 from torchvision import transforms
 import mediapipe as mp
+from mediapipe.tasks import python
+from mediapipe.tasks.python import vision
+import urllib.request
 import os
 from gesture_map import get_word
 from PIL import Image
@@ -33,7 +36,7 @@ def build_model(num_classes):
 def get_bounding_box(hand_landmarks, width, height):
     x_min, y_min = width, height
     x_max, y_max = 0, 0
-    for lm in hand_landmarks.landmark:
+    for lm in hand_landmarks:
         x, y = int(lm.x * width), int(lm.y * height)
         x_min, y_min = min(x_min, x), min(y_min, y)
         x_max, y_max = max(x_max, x), max(y_max, y)
@@ -47,7 +50,7 @@ def get_bounding_box(hand_landmarks, width, height):
     return x_min, y_min, x_max, y_max
 
 def main():
-    print("Loading model...")
+    print("Loading ResNet model...")
     model = build_model(len(CLASS_NAMES))
     
     transform = transforms.Compose([
@@ -56,9 +59,16 @@ def main():
         transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
     ])
 
-    mp_hands = mp.solutions.hands
-    hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.7)
-    mp_draw = mp.solutions.drawing_utils
+    print("Loading MediaPipe tasks...")
+    mp_task_path = os.path.join(_PROJECT_ROOT, "models", "hand_landmarker.task")
+    if not os.path.exists(mp_task_path):
+        print("Downloading hand_landmarker.task...")
+        os.makedirs(os.path.dirname(mp_task_path), exist_ok=True)
+        urllib.request.urlretrieve("https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task", mp_task_path)
+
+    base_options = python.BaseOptions(model_asset_path=mp_task_path)
+    options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=1)
+    detector = vision.HandLandmarker.create_from_options(options)
 
     cap = cv2.VideoCapture(0)
     print("Starting webcam... Press 'q' to quit.")
@@ -73,12 +83,11 @@ def main():
         
         # Convert BGR to RGB for mediapipe
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = hands.process(rgb_frame)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+        detection_result = detector.detect(mp_image)
 
-        if results.multi_hand_landmarks:
-            for hand_landmarks in results.multi_hand_landmarks:
-                mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
-                
+        if detection_result.hand_landmarks:
+            for hand_landmarks in detection_result.hand_landmarks:
                 # Get bounding box
                 x_min, y_min, x_max, y_max = get_bounding_box(hand_landmarks, w, h)
                 cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
@@ -86,6 +95,11 @@ def main():
                 if x_max > x_min and y_max > y_min:
                     # Crop and predict
                     crop_img = rgb_frame[y_min:y_max, x_min:x_max]
+                    
+                    # Safety check if crop is empty
+                    if crop_img.size == 0:
+                        continue
+                        
                     pil_img = Image.fromarray(crop_img)
                     
                     input_tensor = transform(pil_img).unsqueeze(0).to(DEVICE)
@@ -99,10 +113,10 @@ def main():
                         word = get_word(predicted_class) if predicted_class not in ['del', 'nothing', 'space'] else ""
                         
                         # Display
-                        cv2.putText(frame, f"Letter: {predicted_class}", (x_min, y_min - 40), 
+                        cv2.putText(frame, f"Letter: {predicted_class}", (x_min, max(30, y_min - 40)), 
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
                         if word:
-                            cv2.putText(frame, f"Word: {word}", (x_min, y_min - 10), 
+                            cv2.putText(frame, f"Word: {word}", (x_min, max(60, y_min - 10)), 
                                         cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 0, 255), 3)
 
         cv2.imshow("HandSpeak - ASL Medical Translator", frame)
