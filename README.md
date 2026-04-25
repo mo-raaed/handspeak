@@ -150,6 +150,15 @@ python src/inference.py
 
 ---
 
+## 📝 Changelog
+
+* **April 25, 2026:**
+  * **Aspect Ratio Fix:** Updated `src/inference.py` to enforce square bounding boxes around detected hands. This prevents aspect-ratio stretching when resizing crops to 64x64, significantly improving prediction accuracy.
+  * **Real-time Inference:** Created `src/inference.py` using MediaPipe Tasks API for robust hand landmark detection and OpenCV for real-time visualization.
+  * **Training Script:** Added `src/train.py` utilizing a customized ResNet18 model to train on the ASL Alphabet dataset, achieving over 99% validation accuracy.
+
+---
+
 ## 📄 License
 
 This project is developed for **ENGR 422 — Computer Vision** at the American University of Iraq, Sulaimani (AUIS), Spring 2026.
