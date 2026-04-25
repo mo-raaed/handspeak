@@ -75,11 +75,6 @@ def main():
     cap = cv2.VideoCapture(0)
     print("Starting webcam... Press 'q' to quit.")
 
-    # Utility for drawing the skeleton
-    mp_hands = mp.solutions.hands
-    mp_drawing = mp.solutions.drawing_utils
-    mp_drawing_styles = mp.solutions.drawing_styles
-
     while True:
         ret, frame = cap.read()
         if not ret:
