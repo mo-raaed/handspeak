@@ -153,6 +153,7 @@ python src/inference.py
 ## 📝 Changelog
 
 * **April 25, 2026:**
+  * **Advanced AI Pipeline (Landmarks):** Created `src/extract_landmarks.py` to batch process all 87,000 dataset images using MediaPipe. This script extracts the 21 `(x, y, z)` skeletal coordinates from the hands and saves them to a CSV, allowing us to train a highly robust, background-immune neural network instead of relying on raw pixels.
   * **Aspect Ratio Fix:** Updated `src/inference.py` to enforce square bounding boxes around detected hands. This prevents aspect-ratio stretching when resizing crops to 64x64, significantly improving prediction accuracy.
   * **Real-time Inference:** Created `src/inference.py` using MediaPipe Tasks API for robust hand landmark detection and OpenCV for real-time visualization.
   * **Training Script:** Added `src/train.py` utilizing a customized ResNet18 model to train on the ASL Alphabet dataset, achieving over 99% validation accuracy.
