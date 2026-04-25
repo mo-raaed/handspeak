@@ -92,12 +92,25 @@ def main():
             for hand_landmarks in detection_result.hand_landmarks:
                 
                 # Extract the 63 coordinates
-                coords = []
+                raw_coords = []
                 for lm in hand_landmarks:
-                    coords.extend([lm.x, lm.y, lm.z])
+                    raw_coords.extend([lm.x, lm.y, lm.z])
+                    
+                # NORMALIZATION: Make coordinates relative to the wrist (landmark 0)
+                wrist_x, wrist_y, wrist_z = raw_coords[0], raw_coords[1], raw_coords[2]
+                rel_coords = []
+                for i in range(0, len(raw_coords), 3):
+                    rel_coords.append(raw_coords[i] - wrist_x)
+                    rel_coords.append(raw_coords[i+1] - wrist_y)
+                    rel_coords.append(raw_coords[i+2] - wrist_z)
+                    
+                # Normalize by scale
+                max_val = max([abs(val) for val in rel_coords])
+                if max_val > 0:
+                    rel_coords = [val / max_val for val in rel_coords]
                 
                 # Convert to tensor and pass to model
-                input_tensor = torch.FloatTensor([coords]).to(DEVICE)
+                input_tensor = torch.FloatTensor([rel_coords]).to(DEVICE)
                 
                 with torch.no_grad():
                     outputs = model(input_tensor)

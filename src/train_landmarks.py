@@ -53,7 +53,20 @@ def load_data():
             # Convert the 63 coordinates to floats
             coords = [float(val) for val in row[1:]]
             
-            X.append(coords)
+            # NORMALIZATION: Make coordinates relative to the wrist (landmark 0)
+            wrist_x, wrist_y, wrist_z = coords[0], coords[1], coords[2]
+            rel_coords = []
+            for i in range(0, len(coords), 3):
+                rel_coords.append(coords[i] - wrist_x)
+                rel_coords.append(coords[i+1] - wrist_y)
+                rel_coords.append(coords[i+2] - wrist_z)
+                
+            # Normalize by scale (max absolute distance)
+            max_val = max([abs(val) for val in rel_coords])
+            if max_val > 0:
+                rel_coords = [val / max_val for val in rel_coords]
+            
+            X.append(rel_coords)
             y.append(label)
             
     return np.array(X), np.array(y)
