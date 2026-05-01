@@ -36,11 +36,16 @@ MP_TASK_PATH = os.path.join(MODELS_DIR, "hand_landmarker.task")
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Timing: how long a gesture must be held before it is accepted (seconds)
-HOLD_THRESHOLD = 1.5
+HOLD_THRESHOLD = 2.0
 # Cooldown after a word is added before accepting the next one (seconds)
 COOLDOWN = 1.0
 # Number of recent frames to use for smoothing predictions
 SMOOTH_WINDOW = 15
+
+# ─── Control Signals ────────────────────────────────────────────────────────
+SIGNAL_START = "V"   # Show V to start translating
+SIGNAL_STOP  = "A"   # Show A to stop translating
+SIGNAL_CLEAR = "L"   # Show L to clear the sentence
 
 # ─── Colors ──────────────────────────────────────────────────────────────────
 BG_DARK    = "#0f1117"
@@ -89,6 +94,7 @@ class HandSpeakApp:
         self.last_added_time = 0.0
         self.hold_progress = 0.0
         self.running = True
+        self.translating = False      # Starts paused — show V to begin
         self.prediction_buffer = collections.deque(maxlen=SMOOTH_WINDOW)
 
         # ── Load AI Models ───────────────────────────────────────────────
@@ -165,13 +171,14 @@ class HandSpeakApp:
 
         # Status indicator (right side of title bar)
         self.status_dot = tk.Label(
-            title_bar, text="●", font=self.font_medium, bg=BG_PANEL, fg=GREEN
+            title_bar, text="●", font=self.font_medium, bg=BG_PANEL, fg=RED
         )
         self.status_dot.pack(side="right", padx=5)
-        tk.Label(
-            title_bar, text="Camera Active", font=self.font_small,
+        self.status_text = tk.Label(
+            title_bar, text="Paused — Show ✌ (V) to start", font=self.font_small,
             bg=BG_PANEL, fg=TEXT_DIM
-        ).pack(side="right", padx=5)
+        )
+        self.status_text.pack(side="right", padx=5)
 
         # ── Bottom: Sentence Bar (pack BEFORE content so it claims space) ─
         sent_bar = tk.Frame(self.root, bg=BG_PANEL)
@@ -367,7 +374,84 @@ class HandSpeakApp:
             else:
                 detected_letter = ""
 
-            if detected_letter and detected_letter not in ("del", "nothing", "space"):
+            # ── Control signal handling ──────────────────────────────────
+            now = time.time()
+
+            # START signal: V
+            if detected_letter == SIGNAL_START and not self.translating:
+                if detected_letter == self.stable_letter:
+                    elapsed = now - self.hold_start
+                    self.hold_progress = min(elapsed / HOLD_THRESHOLD, 1.0)
+                    if elapsed >= HOLD_THRESHOLD:
+                        self.translating = True
+                        self.hold_start = now
+                        self.hold_progress = 0.0
+                        self.prediction_buffer.clear()
+                else:
+                    self.stable_letter = detected_letter
+                    self.hold_start = now
+                    self.hold_progress = 0.0
+                self.current_letter = detected_letter
+                self.current_word = "▶ START"
+                rgb_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                self._latest_frame = rgb_display
+                time.sleep(0.01)
+                continue
+
+            # STOP signal: A
+            if detected_letter == SIGNAL_STOP and self.translating:
+                if detected_letter == self.stable_letter:
+                    elapsed = now - self.hold_start
+                    self.hold_progress = min(elapsed / HOLD_THRESHOLD, 1.0)
+                    if elapsed >= HOLD_THRESHOLD:
+                        self.translating = False
+                        self.hold_start = now
+                        self.hold_progress = 0.0
+                        self.prediction_buffer.clear()
+                else:
+                    self.stable_letter = detected_letter
+                    self.hold_start = now
+                    self.hold_progress = 0.0
+                self.current_letter = detected_letter
+                self.current_word = "⏹ STOP"
+                rgb_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                self._latest_frame = rgb_display
+                time.sleep(0.01)
+                continue
+
+            # CLEAR signal: L
+            if detected_letter == SIGNAL_CLEAR and self.translating:
+                if detected_letter == self.stable_letter:
+                    elapsed = now - self.hold_start
+                    self.hold_progress = min(elapsed / HOLD_THRESHOLD, 1.0)
+                    if elapsed >= HOLD_THRESHOLD:
+                        self.sentence_words.clear()
+                        self.hold_start = now
+                        self.hold_progress = 0.0
+                        self.prediction_buffer.clear()
+                else:
+                    self.stable_letter = detected_letter
+                    self.hold_start = now
+                    self.hold_progress = 0.0
+                self.current_letter = detected_letter
+                self.current_word = "🗑 CLEAR"
+                rgb_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                self._latest_frame = rgb_display
+                time.sleep(0.01)
+                continue
+
+            # ── If not translating, skip word detection ───────────────────
+            if not self.translating:
+                self.current_letter = ""
+                self.current_word = ""
+                self.hold_progress = 0.0
+                rgb_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                self._latest_frame = rgb_display
+                time.sleep(0.01)
+                continue
+
+            # ── Normal word detection (only when translating) ────────────
+            if detected_letter and detected_letter not in ("del", "nothing", "space", SIGNAL_START, SIGNAL_STOP, SIGNAL_CLEAR):
                 detected_word = get_word(detected_letter)
             else:
                 detected_word = ""
@@ -425,6 +509,14 @@ class HandSpeakApp:
         else:
             self.lbl_letter.configure(text="—", fg=TEXT_DIM)
             self.lbl_word.configure(text="Waiting for gesture...", fg=TEXT_DIM)
+
+        # Update status indicator
+        if self.translating:
+            self.status_dot.configure(fg=GREEN)
+            self.status_text.configure(text="Translating — Show ✊ (A) to stop")
+        else:
+            self.status_dot.configure(fg=RED)
+            self.status_text.configure(text="Paused — Show ✌ (V) to start")
 
         # Update hold progress bar
         self.progress_canvas.delete("all")

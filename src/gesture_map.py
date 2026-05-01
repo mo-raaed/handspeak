@@ -5,18 +5,18 @@ used by non-verbal patients to communicate needs.
 """
 
 GESTURE_MAP = {
-    "A": "Help",
+    "A": "",        # STOP signal
     "B": "Pain",
     "C": "Water",
     "D": "Food",
     "E": "Medicine",
     "F": "Nurse",
     "G": "Doctor",
-    "H": "Hot",
+    "H": "Help",
     "I": "I",
     "J": "Problem",
     "K": "Cold",
-    "L": "More",
+    "L": "",        # CLEAR signal
     "M": "Stop",
     "N": "No",
     "O": "Okay",
@@ -26,7 +26,7 @@ GESTURE_MAP = {
     "S": "Sleep",
     "T": "Toilet",
     "U": "Uncomfortable",
-    "V": "Very",
+    "V": "",        # START signal
     "W": "Want",
     "X": "Anxious",
     "Y": "Yes",
