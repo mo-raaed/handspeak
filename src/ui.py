@@ -17,6 +17,7 @@ import sys
 import pickle
 import time
 import threading
+import collections
 import tkinter as tk
 from tkinter import font as tkfont
 from PIL import Image, ImageTk
@@ -35,9 +36,11 @@ MP_TASK_PATH = os.path.join(MODELS_DIR, "hand_landmarker.task")
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Timing: how long a gesture must be held before it is accepted (seconds)
-HOLD_THRESHOLD = 1.0
+HOLD_THRESHOLD = 1.5
 # Cooldown after a word is added before accepting the next one (seconds)
-COOLDOWN = 0.5
+COOLDOWN = 1.0
+# Number of recent frames to use for smoothing predictions
+SMOOTH_WINDOW = 15
 
 # ─── Colors ──────────────────────────────────────────────────────────────────
 BG_DARK    = "#0f1117"
@@ -81,10 +84,12 @@ class HandSpeakApp:
         self.sentence_words = []
         self.current_letter = ""
         self.current_word = ""
+        self.stable_letter = ""       # The smoothed, stable letter
         self.hold_start = 0.0
         self.last_added_time = 0.0
         self.hold_progress = 0.0
         self.running = True
+        self.prediction_buffer = collections.deque(maxlen=SMOOTH_WINDOW)
 
         # ── Load AI Models ───────────────────────────────────────────────
         self._load_models()
@@ -146,7 +151,7 @@ class HandSpeakApp:
 
         # ── Title Bar ────────────────────────────────────────────────────
         title_bar = tk.Frame(self.root, bg=BG_PANEL, height=56)
-        title_bar.pack(fill="x")
+        title_bar.pack(fill="x", side="top")
         title_bar.pack_propagate(False)
 
         tk.Label(
@@ -168,9 +173,38 @@ class HandSpeakApp:
             bg=BG_PANEL, fg=TEXT_DIM
         ).pack(side="right", padx=5)
 
+        # ── Bottom: Sentence Bar (pack BEFORE content so it claims space) ─
+        sent_bar = tk.Frame(self.root, bg=BG_PANEL)
+        sent_bar.pack(fill="x", side="bottom")
+
+        # Sentence label
+        sent_top = tk.Frame(sent_bar, bg=BG_PANEL)
+        sent_top.pack(fill="x", padx=20, pady=(12, 0))
+
+        tk.Label(
+            sent_top, text="📝 SENTENCE BUILDER", font=self.font_small,
+            bg=BG_PANEL, fg=TEXT_DIM
+        ).pack(side="left")
+
+        self.lbl_sentence = tk.Label(
+            sent_bar, text="Make a sign to start building a sentence...",
+            font=self.font_sentence, bg=BG_PANEL, fg=TEXT_DIM,
+            anchor="w", wraplength=1200
+        )
+        self.lbl_sentence.pack(fill="x", padx=20, pady=(6, 0))
+
+        # Buttons row
+        btn_row = tk.Frame(sent_bar, bg=BG_PANEL)
+        btn_row.pack(fill="x", padx=20, pady=(8, 14))
+
+        self._make_btn(btn_row, "🔊  Speak", ACCENT, self._speak_sentence).pack(side="left", padx=(0, 8))
+        self._make_btn(btn_row, "⬅  Undo", ORANGE, self._undo_word).pack(side="left", padx=(0, 8))
+        self._make_btn(btn_row, "🗑  Clear", RED, self._clear_sentence).pack(side="left", padx=(0, 8))
+        self._make_btn(btn_row, "🚨  Emergency", "#d63031", self._emergency).pack(side="right")
+
         # ── Main Content Area ────────────────────────────────────────────
         content = tk.Frame(self.root, bg=BG_DARK)
-        content.pack(fill="both", expand=True, padx=16, pady=(10, 0))
+        content.pack(fill="both", expand=True, padx=16, pady=10)
         content.columnconfigure(0, weight=3)
         content.columnconfigure(1, weight=1)
         content.rowconfigure(0, weight=1)
@@ -186,7 +220,6 @@ class HandSpeakApp:
         # ── Right: Side Panel ────────────────────────────────────────────
         side = tk.Frame(content, bg=BG_DARK)
         side.grid(row=0, column=1, sticky="nsew")
-        side.rowconfigure(2, weight=1)
 
         # -- Detection Card --
         det_card = tk.Frame(side, bg=BG_CARD, bd=0)
@@ -219,13 +252,20 @@ class HandSpeakApp:
         ).pack(side="left")
 
         self.progress_canvas = tk.Canvas(
-            prog_frame, height=12, bg=BG_DARK, bd=0, highlightthickness=0
+            prog_frame, height=14, bg=BG_DARK, bd=0, highlightthickness=0
         )
         self.progress_canvas.pack(side="left", fill="x", expand=True, padx=(8, 0))
 
+        # -- Last Added Feedback --
+        self.lbl_last_added = tk.Label(
+            det_card, text="", font=self.font_small,
+            bg=BG_CARD, fg=GREEN
+        )
+        self.lbl_last_added.pack(pady=(0, 10))
+
         # -- Gesture Map Reference Card --
         ref_card = tk.Frame(side, bg=BG_CARD, bd=0)
-        ref_card.pack(fill="x", pady=(0, 10))
+        ref_card.pack(fill="both", expand=True, pady=(0, 0))
 
         tk.Label(
             ref_card, text="GESTURE MAP", font=self.font_small,
@@ -246,36 +286,6 @@ class HandSpeakApp:
                 bg=BG_CARD, fg=TEXT_DIM, anchor="w"
             )
             lbl.grid(row=r, column=c, sticky="w", padx=(0, 20), pady=1)
-
-        # ── Bottom: Sentence Bar ─────────────────────────────────────────
-        sent_bar = tk.Frame(self.root, bg=BG_PANEL, height=120)
-        sent_bar.pack(fill="x", side="bottom")
-        sent_bar.pack_propagate(False)
-
-        # Sentence label
-        sent_top = tk.Frame(sent_bar, bg=BG_PANEL)
-        sent_top.pack(fill="x", padx=20, pady=(12, 0))
-
-        tk.Label(
-            sent_top, text="SENTENCE BUILDER", font=self.font_small,
-            bg=BG_PANEL, fg=TEXT_DIM
-        ).pack(side="left")
-
-        self.lbl_sentence = tk.Label(
-            sent_bar, text="Make a sign to start building a sentence...",
-            font=self.font_sentence, bg=BG_PANEL, fg=TEXT_WHITE,
-            anchor="w", wraplength=900
-        )
-        self.lbl_sentence.pack(fill="x", padx=20, pady=(6, 0))
-
-        # Buttons row
-        btn_row = tk.Frame(sent_bar, bg=BG_PANEL)
-        btn_row.pack(fill="x", padx=20, pady=(8, 12))
-
-        self._make_btn(btn_row, "🔊  Speak", ACCENT, self._speak_sentence).pack(side="left", padx=(0, 8))
-        self._make_btn(btn_row, "⬅  Undo", ORANGE, self._undo_word).pack(side="left", padx=(0, 8))
-        self._make_btn(btn_row, "🗑  Clear", RED, self._clear_sentence).pack(side="left", padx=(0, 8))
-        self._make_btn(btn_row, "🚨  Emergency", "#d63031", self._emergency).pack(side="right")
 
     def _make_btn(self, parent, text, color, command):
         btn = tk.Button(
@@ -303,8 +313,7 @@ class HandSpeakApp:
             mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
             result = self.detector.detect(mp_image)
 
-            detected_letter = ""
-            detected_word = ""
+            raw_letter = ""
 
             if result.hand_landmarks:
                 for hand_lms in result.hand_landmarks:
@@ -328,12 +337,7 @@ class HandSpeakApp:
                     with torch.no_grad():
                         out = self.model(tensor)
                         _, pred = out.max(1)
-                        detected_letter = self.le.inverse_transform([pred.item()])[0]
-
-                    if detected_letter not in ("del", "nothing", "space"):
-                        detected_word = get_word(detected_letter)
-                    else:
-                        detected_word = ""
+                        raw_letter = self.le.inverse_transform([pred.item()])[0]
 
                     # Draw bounding box
                     xs = [int(lm.x * w) for lm in hand_lms]
@@ -350,19 +354,39 @@ class HandSpeakApp:
                         cx, cy = int(lm.x * w), int(lm.y * h)
                         cv2.circle(frame, (cx, cy), 4, (162, 155, 254), -1)
 
+            # ── Smoothing: use majority vote over last N frames ──────────
+            self.prediction_buffer.append(raw_letter)
+            if self.prediction_buffer:
+                counter = collections.Counter(self.prediction_buffer)
+                smoothed_letter, count = counter.most_common(1)[0]
+                # Only accept if at least 60% of recent frames agree
+                if count >= len(self.prediction_buffer) * 0.6:
+                    detected_letter = smoothed_letter
+                else:
+                    detected_letter = self.stable_letter  # keep previous
+            else:
+                detected_letter = ""
+
+            if detected_letter and detected_letter not in ("del", "nothing", "space"):
+                detected_word = get_word(detected_letter)
+            else:
+                detected_word = ""
+
             # ── Hold-to-confirm logic ────────────────────────────────────
             now = time.time()
-            if detected_word and detected_letter == self.current_letter:
+            if detected_word and detected_letter == self.stable_letter:
+                # Same letter as before — accumulate hold time
                 elapsed = now - self.hold_start
                 self.hold_progress = min(elapsed / HOLD_THRESHOLD, 1.0)
                 if elapsed >= HOLD_THRESHOLD and (now - self.last_added_time) > COOLDOWN:
                     self.sentence_words.append(detected_word)
                     self.last_added_time = now
+                    # Reset hold but keep stable_letter so holding longer adds again
                     self.hold_start = now
                     self.hold_progress = 0.0
-            else:
-                self.current_letter = detected_letter
-                self.current_word = detected_word
+            elif detected_letter != self.stable_letter:
+                # Letter changed — reset hold timer
+                self.stable_letter = detected_letter
                 self.hold_start = now
                 self.hold_progress = 0.0
 
@@ -408,7 +432,14 @@ class HandSpeakApp:
         if cw > 0:
             fill_w = int(cw * self.hold_progress)
             color = GREEN if self.hold_progress >= 1.0 else ACCENT
-            self.progress_canvas.create_rectangle(0, 0, fill_w, 12, fill=color, outline="")
+            self.progress_canvas.create_rectangle(0, 0, fill_w, 14, fill=color, outline="")
+
+        # Update last-added feedback
+        if self.sentence_words:
+            self.lbl_last_added.configure(
+                text=f"✓ Added: {self.sentence_words[-1]}",
+                fg=GREEN
+            )
 
         # Update sentence
         if self.sentence_words:
@@ -452,9 +483,12 @@ class HandSpeakApp:
     def _undo_word(self):
         if self.sentence_words:
             self.sentence_words.pop()
+            if not self.sentence_words:
+                self.lbl_last_added.configure(text="", fg=GREEN)
 
     def _clear_sentence(self):
         self.sentence_words.clear()
+        self.lbl_last_added.configure(text="", fg=GREEN)
 
     def _emergency(self):
         self.sentence_words = ["EMERGENCY", "—", "I", "NEED", "HELP", "NOW"]
