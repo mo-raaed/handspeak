@@ -152,6 +152,9 @@ python src/inference.py
 
 ## 📝 Changelog
 
+* **May 1, 2026:**
+  * **Desktop UI Application:** Created `src/ui.py`, a full-featured Tkinter desktop application that embeds the webcam feed, displays real-time gesture detection, and includes a sentence builder with hold-to-confirm input, text-to-speech output, undo/clear controls, and an emergency button for non-verbal patient communication.
+
 * **April 25, 2026:**
   * **Landmarks Inference Update:** Rewrote `src/inference.py` to use the new `LandmarkNN` model. The webcam now extracts the 63 hand coordinates via MediaPipe and feeds them into the tiny Neural Network, achieving flawless real-world background immunity.
   * **Advanced AI Pipeline (Landmarks Training):** Created `src/train_landmarks.py` to train a lightning-fast, lightweight Multi-Layer Perceptron (MLP) on the extracted skeletal coordinates, ignoring raw pixels to completely eliminate background bias.
