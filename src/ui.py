@@ -96,6 +96,9 @@ class HandSpeakApp:
         self.running = True
         self.translating = False      # Starts paused — show V to begin
         self.prediction_buffer = collections.deque(maxlen=SMOOTH_WINDOW)
+        # Separate timer for control signals so they don't share state
+        self.signal_stable_letter = ""
+        self.signal_hold_start = 0.0
 
         # ── Load AI Models ───────────────────────────────────────────────
         self._load_models()
@@ -270,6 +273,28 @@ class HandSpeakApp:
         )
         self.lbl_last_added.pack(pady=(0, 10))
 
+        # -- Controls Card --
+        ctrl_card = tk.Frame(side, bg=BG_CARD, bd=0)
+        ctrl_card.pack(fill="x", pady=(0, 10))
+
+        tk.Label(
+            ctrl_card, text="CONTROLS (hold 2s)", font=self.font_small,
+            bg=BG_CARD, fg=TEXT_DIM
+        ).pack(anchor="w", padx=16, pady=(14, 6))
+
+        controls = [
+            ("V  ✌", "Start translating", GREEN),
+            ("A  ✊", "Stop translating", RED),
+            ("L  👆", "Clear sentence", ORANGE),
+        ]
+        for sign, desc, color in controls:
+            row = tk.Frame(ctrl_card, bg=BG_CARD)
+            row.pack(fill="x", padx=16, pady=2)
+            tk.Label(row, text=sign, font=self.font_small, bg=BG_CARD, fg=color, width=6, anchor="w").pack(side="left")
+            tk.Label(row, text=desc, font=self.font_small, bg=BG_CARD, fg=TEXT_DIM, anchor="w").pack(side="left")
+
+        tk.Frame(ctrl_card, bg=BG_CARD, height=8).pack()  # spacer
+
         # -- Gesture Map Reference Card --
         ref_card = tk.Frame(side, bg=BG_CARD, bd=0)
         ref_card.pack(fill="both", expand=True, pady=(0, 0))
@@ -282,9 +307,10 @@ class HandSpeakApp:
         ref_scroll = tk.Frame(ref_card, bg=BG_CARD)
         ref_scroll.pack(fill="x", padx=16, pady=(0, 14))
 
-        # Show a compact grid of letter → word mappings
+        # Show only letters that have word mappings (skip control signals)
         cols = 2
-        for idx, (letter, word) in enumerate(GESTURE_MAP.items()):
+        mapped = {k: v for k, v in GESTURE_MAP.items() if v}
+        for idx, (letter, word) in enumerate(mapped.items()):
             r, c = divmod(idx, cols)
             lbl = tk.Label(
                 ref_scroll,
@@ -374,71 +400,65 @@ class HandSpeakApp:
             else:
                 detected_letter = ""
 
-            # ── Control signal handling ──────────────────────────────────
+            # ── Control signal handling (uses dedicated signal timer) ────
             now = time.time()
+            is_signal = detected_letter in (SIGNAL_START, SIGNAL_STOP, SIGNAL_CLEAR)
 
-            # START signal: V
-            if detected_letter == SIGNAL_START and not self.translating:
-                if detected_letter == self.stable_letter:
-                    elapsed = now - self.hold_start
+            if is_signal:
+                # Check if same signal letter is being held
+                if detected_letter == self.signal_stable_letter:
+                    elapsed = now - self.signal_hold_start
                     self.hold_progress = min(elapsed / HOLD_THRESHOLD, 1.0)
+                else:
+                    # New signal letter — reset the dedicated signal timer
+                    self.signal_stable_letter = detected_letter
+                    self.signal_hold_start = now
+                    self.hold_progress = 0.0
+                    elapsed = 0.0
+
+                signal_label = ""
+
+                # START signal: V
+                if detected_letter == SIGNAL_START and not self.translating:
+                    signal_label = "▶ START"
                     if elapsed >= HOLD_THRESHOLD:
                         self.translating = True
-                        self.hold_start = now
+                        self.signal_hold_start = now
+                        self.signal_stable_letter = ""
                         self.hold_progress = 0.0
                         self.prediction_buffer.clear()
-                else:
-                    self.stable_letter = detected_letter
-                    self.hold_start = now
-                    self.hold_progress = 0.0
-                self.current_letter = detected_letter
-                self.current_word = "▶ START"
-                rgb_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                self._latest_frame = rgb_display
-                time.sleep(0.01)
-                continue
 
-            # STOP signal: A
-            if detected_letter == SIGNAL_STOP and self.translating:
-                if detected_letter == self.stable_letter:
-                    elapsed = now - self.hold_start
-                    self.hold_progress = min(elapsed / HOLD_THRESHOLD, 1.0)
+                # STOP signal: A
+                elif detected_letter == SIGNAL_STOP and self.translating:
+                    signal_label = "⏹ STOP"
                     if elapsed >= HOLD_THRESHOLD:
                         self.translating = False
-                        self.hold_start = now
+                        self.signal_hold_start = now
+                        self.signal_stable_letter = ""
                         self.hold_progress = 0.0
                         self.prediction_buffer.clear()
-                else:
-                    self.stable_letter = detected_letter
-                    self.hold_start = now
-                    self.hold_progress = 0.0
-                self.current_letter = detected_letter
-                self.current_word = "⏹ STOP"
-                rgb_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                self._latest_frame = rgb_display
-                time.sleep(0.01)
-                continue
 
-            # CLEAR signal: L
-            if detected_letter == SIGNAL_CLEAR and self.translating:
-                if detected_letter == self.stable_letter:
-                    elapsed = now - self.hold_start
-                    self.hold_progress = min(elapsed / HOLD_THRESHOLD, 1.0)
+                # CLEAR signal: L
+                elif detected_letter == SIGNAL_CLEAR and self.translating:
+                    signal_label = "🗑 CLEAR"
                     if elapsed >= HOLD_THRESHOLD:
                         self.sentence_words.clear()
-                        self.hold_start = now
+                        self.signal_hold_start = now
+                        self.signal_stable_letter = ""
                         self.hold_progress = 0.0
                         self.prediction_buffer.clear()
-                else:
-                    self.stable_letter = detected_letter
-                    self.hold_start = now
-                    self.hold_progress = 0.0
-                self.current_letter = detected_letter
-                self.current_word = "🗑 CLEAR"
-                rgb_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                self._latest_frame = rgb_display
-                time.sleep(0.01)
-                continue
+
+                if signal_label:
+                    self.current_letter = detected_letter
+                    self.current_word = signal_label
+                    rgb_display = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    self._latest_frame = rgb_display
+                    time.sleep(0.01)
+                    continue
+            else:
+                # Not a signal — reset signal timer
+                self.signal_stable_letter = ""
+                self.signal_hold_start = 0.0
 
             # ── If not translating, skip word detection ───────────────────
             if not self.translating:
