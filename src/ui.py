@@ -46,6 +46,7 @@ SMOOTH_WINDOW = 15
 SIGNAL_START = "V"   # Show V to start translating
 SIGNAL_STOP  = "A"   # Show A to stop translating
 SIGNAL_CLEAR = "L"   # Show L to clear the sentence
+SIGNAL_SPEAK = "F"   # Show F to speak the sentence
 
 # ─── Colors ──────────────────────────────────────────────────────────────────
 BG_DARK    = "#0f1117"
@@ -286,6 +287,7 @@ class HandSpeakApp:
             ("V  ✌", "Start translating", GREEN),
             ("A  ✊", "Stop translating", RED),
             ("L  👆", "Clear sentence", ORANGE),
+            ("F  🔊", "Speak sentence", ACCENT_ALT),
         ]
         for sign, desc, color in controls:
             row = tk.Frame(ctrl_card, bg=BG_CARD)
@@ -402,7 +404,7 @@ class HandSpeakApp:
 
             # ── Control signal handling (uses dedicated signal timer) ────
             now = time.time()
-            is_signal = detected_letter in (SIGNAL_START, SIGNAL_STOP, SIGNAL_CLEAR)
+            is_signal = detected_letter in (SIGNAL_START, SIGNAL_STOP, SIGNAL_CLEAR, SIGNAL_SPEAK)
 
             if is_signal:
                 # Check if same signal letter is being held
@@ -448,6 +450,16 @@ class HandSpeakApp:
                         self.hold_progress = 0.0
                         self.prediction_buffer.clear()
 
+                # SPEAK signal: F
+                elif detected_letter == SIGNAL_SPEAK and self.translating:
+                    signal_label = "🔊 SPEAK"
+                    if elapsed >= HOLD_THRESHOLD:
+                        self._speak_sentence()
+                        self.signal_hold_start = now
+                        self.signal_stable_letter = ""
+                        self.hold_progress = 0.0
+                        self.prediction_buffer.clear()
+
                 if signal_label:
                     self.current_letter = detected_letter
                     self.current_word = signal_label
@@ -471,7 +483,7 @@ class HandSpeakApp:
                 continue
 
             # ── Normal word detection (only when translating) ────────────
-            if detected_letter and detected_letter not in ("del", "nothing", "space", SIGNAL_START, SIGNAL_STOP, SIGNAL_CLEAR):
+            if detected_letter and detected_letter not in ("del", "nothing", "space", SIGNAL_START, SIGNAL_STOP, SIGNAL_CLEAR, SIGNAL_SPEAK):
                 detected_word = get_word(detected_letter)
             else:
                 detected_word = ""

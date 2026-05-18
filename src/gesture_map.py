@@ -10,7 +10,7 @@ GESTURE_MAP = {
     "C": "Water",
     "D": "Food",
     "E": "Medicine",
-    "F": "Nurse",
+    "F": "",        # SPEAK signal
     "G": "Doctor",
     "H": "Help",
     "I": "I",
